@@ -2,12 +2,13 @@
 
 # Vision Model Settings
 vision_model:
-  name: "efficientnet_b0"  # Options: efficientnet_b0, resnet50, vit_base
+  name: "efficientnet_b0"  # Options: efficientnet_b0, efficientnet_b2, resnet50, vit_base, clip
   pretrained: true
-  num_classes: 50  # Adjust based on your local cuisine dataset
-  model_path: "models/weights/food_classifier.pth"
+  num_classes: 20  # Indian cuisine: ~15-20 common dishes (Biryani, Dosa, Curry, etc.)
+  model_path: "models/weights/food_classifier_indian.pth"
   input_size: 224
   confidence_threshold: 0.5
+  cuisine_focus: "indian"  # Focus on Indian cuisine
 
 # Generative AI Settings
 genai:
@@ -24,6 +25,7 @@ genai:
 nutrition_db:
   path: "data/nutrition_db.csv"
   default_portion: 100  # grams
+  cuisine_focus: "indian"  # Indian cuisine nutritional data
 
 # Portion Estimation (Optional)
 portion_estimation:
