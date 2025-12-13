@@ -1,0 +1,46 @@
+# FoodVisionAI Configuration File
+
+# Vision Model Settings
+vision_model:
+  name: "efficientnet_b0"  # Options: efficientnet_b0, resnet50, vit_base
+  pretrained: true
+  num_classes: 50  # Adjust based on your local cuisine dataset
+  model_path: "models/weights/food_classifier.pth"
+  input_size: 224
+  confidence_threshold: 0.5
+
+# Generative AI Settings
+genai:
+  provider: "ollama"  # Options: ollama, openai, anthropic
+  model_name: "llama3.2"  # For Ollama: llama3.2, mistral, phi3
+  # For OpenAI: gpt-4o-mini
+  # For Anthropic: claude-3-haiku-20240307
+  api_key: null  # Set via environment variable
+  base_url: "http://localhost:11434"  # Ollama default
+  temperature: 0.7
+  max_tokens: 500
+
+# Nutritional Database
+nutrition_db:
+  path: "data/nutrition_db.csv"
+  default_portion: 100  # grams
+
+# Portion Estimation (Optional)
+portion_estimation:
+  enabled: false
+  method: "reference_object"  # Options: reference_object, depth_estimation
+  reference_size: 25  # cm (typical plate diameter)
+
+# UI Settings
+ui:
+  title: "FoodVisionAI - Nutritional Analysis"
+  theme: "light"
+  max_image_size_mb: 10
+
+# Extended Features
+features:
+  multi_food_detection: false
+  portion_estimation: false
+  correction_interface: false
+  personalized_recommendations: false
+
