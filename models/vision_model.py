@@ -26,26 +26,28 @@ INDIAN_FOOD_CLASSES = [
     "Palak Paneer", "Chole", "Rajma", "Aloo Gobi", "Baingan Bharta"
 ]
 
-# Mapping from YOLO dataset classes to our food classes
-# Based on dataset.yaml from HuggingFace dataset
-YOLO_TO_FOOD_MAPPING = {
-    # YOLO class index -> Our food classes (can map to multiple)
-    0: ["Naan", "Roti"],  # bread_or_Roti_naan
-    1: ["Curry", "Butter Chicken", "Palak Paneer"],  # curry_dish
-    2: ["Biryani"],  # rice_dish
-    3: ["Aloo Gobi", "Baingan Bharta"],  # dry_vegetable
-    4: ["Samosa"],  # snack_item
-    7: ["Dal"],  # Dal_or_sambar
-    15: ["Dosa", "Idli"],  # south_indian_breakfast
+# Direct mapping from YOLO class names to food names
+# This maps YOLO class names (from dataset) to nutrition database food names
+YOLO_CLASS_TO_FOOD = {
+    "bread_or_Roti_naan": "Roti",  # Default to Roti, can be Naan too
+    "curry_dish": "Curry",  # Generic curry
+    "rice_dish": "Biryani",  # Default rice dish
+    "dry_vegetable": "Aloo Gobi",  # Default dry vegetable
+    "snack_item": "Samosa",  # Default snack
+    "sweet_item": "Unknown",  # Not in nutrition DB yet
+    "accompaniment": "Unknown",  # Not in nutrition DB yet
+    "Dal_or_sambar": "Dal",
+    "drink": "Unknown",  # Not in nutrition DB yet
+    "eggs": "Eggs",  # Eggs
+    "fish_dish": "Unknown",  # Not in nutrition DB yet
+    "fruits": "Unknown",  # Not in nutrition DB yet
+    "pasta": "Unknown",  # Not in nutrition DB yet
+    "salad": "Unknown",  # Not in nutrition DB yet
+    "soup": "Unknown",  # Not in nutrition DB yet
+    "south_indian_breakfast": "Idli",  # Default to Idli, can be Dosa too
 }
 
-# Reverse mapping for easier lookup
-FOOD_TO_YOLO_MAPPING = {}
-for yolo_class, foods in YOLO_TO_FOOD_MAPPING.items():
-    for food in foods:
-        if food not in FOOD_TO_YOLO_MAPPING:
-            FOOD_TO_YOLO_MAPPING[food] = []
-        FOOD_TO_YOLO_MAPPING[food].append(yolo_class)
+# Note: We now use direct 1-to-1 mapping from YOLO class names to food names
 
 
 class VisionModel:
@@ -56,10 +58,10 @@ class VisionModel:
     
     def __init__(
         self,
-        model_name="yolov8n",
+        model_name="yolov8s",  # Changed default to yolov8s for better accuracy
         model_path=None,
         dataset_yaml=None,
-        confidence_threshold=0.25,
+        confidence_threshold=0.5,  # Increased from 0.25 to reduce false positives
         class_names=None
     ):
         """
@@ -122,40 +124,33 @@ class VisionModel:
         except Exception as e:
             raise RuntimeError(f"Failed to load YOLO model: {str(e)}")
     
-    def _map_yolo_to_food(self, yolo_class_id: int, confidence: float) -> List[Dict]:
+    def _map_yolo_to_food(self, yolo_class_id: int, confidence: float) -> Dict:
         """
-        Map YOLO class detection to our food classes
+        Map YOLO class detection to food name
         
         Args:
             yolo_class_id: YOLO class ID
             confidence: Detection confidence
         
         Returns:
-            List of food detections with mapped classes
+            Dict with food detection info
         """
-        foods = YOLO_TO_FOOD_MAPPING.get(yolo_class_id, [])
+        # Get YOLO class name
+        if yolo_class_id < len(self.yolo_class_names):
+            yolo_class_name = self.yolo_class_names[yolo_class_id]
+        else:
+            yolo_class_name = f"Class_{yolo_class_id}"
         
-        if not foods:
-            # Unknown YOLO class, skip or use generic name
-            yolo_name = self.yolo_class_names[yolo_class_id] if yolo_class_id < len(self.yolo_class_names) else f"Class_{yolo_class_id}"
-            return [{
-                "food_name": yolo_name,
-                "confidence": confidence,
-                "yolo_class": yolo_class_id,
-                "mapped": False
-            }]
+        # Map to food name
+        food_name = YOLO_CLASS_TO_FOOD.get(yolo_class_name, yolo_class_name)
         
-        # Map to our food classes
-        detections = []
-        for food in foods:
-            detections.append({
-                "food_name": food,
-                "confidence": confidence,
-                "yolo_class": yolo_class_id,
-                "mapped": True
-            })
-        
-        return detections
+        return {
+            "food_name": food_name,
+            "yolo_class_name": yolo_class_name,  # Keep original for debugging
+            "confidence": confidence,
+            "yolo_class": yolo_class_id,
+            "mapped": food_name != yolo_class_name
+        }
     
     def predict(self, image: Union[Image.Image, np.ndarray, str, Path]) -> Dict:
         """
@@ -200,13 +195,10 @@ class VisionModel:
                     # Get bounding box
                     bbox = boxes.xyxy[i].cpu().numpy()  # [x1, y1, x2, y2]
                     
-                    # Map YOLO class to our food classes
-                    food_detections = self._map_yolo_to_food(class_id, confidence)
-                    
-                    # Add bounding box info to each detection
-                    for food_det in food_detections:
-                        food_det["bbox"] = bbox.tolist()
-                        all_detections.append(food_det)
+                    # Map YOLO class to food name
+                    food_detection = self._map_yolo_to_food(class_id, confidence)
+                    food_detection["bbox"] = bbox.tolist()
+                    all_detections.append(food_detection)
         
         # If no detections, return empty result
         if not all_detections:
@@ -223,8 +215,54 @@ class VisionModel:
         # Sort by confidence
         all_detections.sort(key=lambda x: x["confidence"], reverse=True)
         
-        # Get primary detection (highest confidence)
+        # Aggressive false positive filtering
+        class_counts = {}
+        for det in all_detections:
+            yolo_class = det.get("yolo_class_name", "")
+            class_counts[yolo_class] = class_counts.get(yolo_class, 0) + 1
+        
+        # If a class appears more than 3 times, it's VERY likely a false positive
+        # Reject all detections of that class if count > 3
+        filtered_detections = []
+        for det in all_detections:
+            yolo_class = det.get("yolo_class_name", "")
+            count = class_counts.get(yolo_class, 0)
+            confidence = det.get("confidence", 0.0)
+            
+            # Reject if:
+            # 1. Too many detections of same class (>3) - clear false positive
+            # 2. Low confidence (<0.6) AND many duplicates (>2)
+            if count > 3:
+                # Too many duplicates - reject this class entirely
+                continue
+            elif count > 2 and confidence < 0.6:
+                # Multiple detections with low confidence - likely wrong
+                continue
+            else:
+                # Keep this detection
+                filtered_detections.append(det)
+        
+        # Use filtered detections
+        all_detections = filtered_detections
+        
+        # If no detections after filtering, return empty
+        if not all_detections:
+            return {
+                "foods": [],
+                "food_name": "Unknown",
+                "confidence": 0.0,
+                "top_predictions": [],
+                "status": "yolo_pretrained" if not self.model_path else "yolo_fine_tuned",
+                "model_name": self.model_name,
+                "num_detections": 0
+            }
+        
+        # Additional validation: if top detection has low confidence, mark as uncertain
         primary = all_detections[0]
+        primary_confidence = primary.get("confidence", 0.0)
+        
+        # If confidence is too low, mark as uncertain
+        is_uncertain = primary_confidence < 0.65
         
         # Get top predictions (unique foods, highest confidence for each)
         food_confidences = {}
@@ -245,6 +283,8 @@ class VisionModel:
         return {
             "food_name": primary["food_name"],
             "confidence": primary["confidence"],
+            "yolo_class_name": primary.get("yolo_class_name", "Unknown"),  # Add for debugging
+            "is_uncertain": is_uncertain,  # Flag for low confidence
             "top_predictions": [
                 {"food_name": pred["food_name"], "confidence": pred["confidence"]}
                 for pred in top_predictions
@@ -270,7 +310,7 @@ class VisionModel:
 
 
 def get_vision_model(
-    model_name="yolov8n",
+    model_name="yolov8s",  # Changed default to yolov8s for better accuracy
     model_path=None,
     dataset_yaml=None
 ) -> VisionModel:

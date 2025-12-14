@@ -15,7 +15,7 @@ names:
   13: salad
   14: soup
   15: south_indian_breakfast
-path: /export/home/4prasad/piyush/Food_Vision_AI/data/yolo_training_data
+path: /Users/piyushkulkarni/Documents/Automated_Nutritional_Analysis_App/data/yolo_training_data
 test: images
 train: train/images
 val: val/images

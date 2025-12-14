@@ -10,9 +10,9 @@ import os
 
 def train_yolo_model(
     data_yaml="data/yolo_training_data/dataset.yaml",
-    model_name="yolov8n",
-    epochs=100,
-    batch_size=8,
+    model_name="yolov8s",  # Changed from yolov8n to yolov8s for better accuracy
+    epochs=200,  # Increased from 100 to 200
+    batch_size=16,  # Increased from 8 to 16 (if GPU memory allows)
     img_size=640,
     output_dir="models/weights"
 ):
@@ -62,11 +62,38 @@ def train_yolo_model(
             epochs=epochs,
             batch=batch_size,
             imgsz=img_size,
+            # Augmentation parameters for better accuracy
+            hsv_h=0.02,          # Hue augmentation (slightly increased)
+            hsv_s=0.7,           # Saturation augmentation
+            hsv_v=0.4,           # Value augmentation
+            degrees=10.0,        # Rotation ±10 degrees (was 0.0)
+            translate=0.1,       # Translation
+            scale=0.5,           # Scaling
+            shear=5.0,           # Shearing ±5 degrees (was 0.0)
+            perspective=0.0,     # Perspective transform
+            flipud=0.0,          # Vertical flip
+            fliplr=0.5,          # Horizontal flip
+            mosaic=1.0,          # Mosaic augmentation
+            mixup=0.1,           # Mixup augmentation (was 0.0)
+            copy_paste=0.0,      # Copy-paste augmentation
+            # Training parameters
+            patience=50,         # Early stopping patience
+            save_period=10,      # Save checkpoint every 10 epochs
+            optimizer='AdamW',   # Use AdamW optimizer (better than SGD for small datasets)
+            lr0=0.001,           # Initial learning rate (lower for fine-tuning)
+            lrf=0.1,             # Final learning rate factor
+            momentum=0.937,      # SGD momentum (if using SGD)
+            weight_decay=0.0005, # L2 regularization
+            warmup_epochs=3.0,   # Warmup epochs
+            warmup_momentum=0.8, # Warmup momentum
+            warmup_bias_lr=0.1,  # Warmup bias LR
+            # Output settings
             project=output_dir,
             name="food_detector",
             save=True,
             plots=True,
-            val=True
+            val=True,
+            verbose=True
         )
         
         # Model will be saved automatically to:
@@ -108,11 +135,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train YOLO model on Indian food dataset")
     parser.add_argument("--data", type=str, default="data/yolo_training_data/dataset.yaml",
                        help="Path to dataset.yaml file")
-    parser.add_argument("--model", type=str, default="yolov8n",
+    parser.add_argument("--model", type=str, default="yolov8s",
                        help="YOLO model name (yolov8n, yolov8s, yolov8m, yolov8l, yolov8x)")
-    parser.add_argument("--epochs", type=int, default=100,
+    parser.add_argument("--epochs", type=int, default=200,
                        help="Number of training epochs")
-    parser.add_argument("--batch", type=int, default=8,
+    parser.add_argument("--batch", type=int, default=16,
                        help="Batch size")
     parser.add_argument("--imgsz", type=int, default=640,
                        help="Image size")

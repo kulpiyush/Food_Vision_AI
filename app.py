@@ -100,8 +100,9 @@ def main():
         # Model status
         if st.session_state.vision_model is not None:
             model_info = st.session_state.vision_model.get_model_info()
-            st.success(f"✅ Vision Model: {model_info['model_name']} loaded")
-            st.caption(f"Device: {model_info['device']} | Classes: {model_info['num_classes']}")
+            model_type = "Fine-tuned" if model_info.get('is_fine_tuned', False) else "Pretrained"
+            st.success(f"✅ Vision Model: {model_type} {model_info['model_name']} loaded")
+            st.caption(f"Device: {model_info['device']} | YOLO Classes: {model_info['yolo_classes']} | Food Classes: {model_info['food_classes']}")
         else:
             st.info("ℹ️ Vision model will load on first analysis")
         
@@ -163,18 +164,19 @@ def main():
                                 with st.spinner("Loading YOLO model (first time only)..."):
                                     # Try to use fine-tuned model if available, otherwise use pretrained
                                     model_path = "models/weights/food_detector_yolo.pt"
-                                    dataset_yaml = "data/hf_dataset/dataset.yaml"
+                                    # Use the training dataset YAML which has the correct class names
+                                    dataset_yaml = "data/yolo_training_data/dataset.yaml"
                                     
                                     if os.path.exists(model_path):
                                         st.session_state.vision_model = get_vision_model(
-                                            model_name="yolov8n",
+                                            model_name="yolov8s",  # Updated to yolov8s for better accuracy
                                             model_path=model_path,
                                             dataset_yaml=dataset_yaml
                                         )
                                     else:
                                         # Use pretrained YOLO (will need fine-tuning for food detection)
                                         st.session_state.vision_model = get_vision_model(
-                                            model_name="yolov8n",
+                                            model_name="yolov8s",  # Updated to yolov8s
                                             dataset_yaml=dataset_yaml
                                         )
                             
@@ -263,18 +265,27 @@ def main():
                 # Show all detected foods
                 for i, food_det in enumerate(foods_detected[:5], 1):  # Show up to 5
                     conf_pct = food_det['confidence'] * 100
-                    st.caption(f"{i}. **{food_det['food_name']}** ({conf_pct:.1f}% confidence)")
+                    yolo_class = food_det.get('yolo_class_name', 'Unknown')
+                    st.caption(f"{i}. **{food_det['food_name']}** ({conf_pct:.1f}% confidence) [YOLO: {yolo_class}]")
             else:
-                st.success(f"**Detected Food:** {food_name}")
+                # Show YOLO class for debugging
+                yolo_class_name = foods_detected[0].get('yolo_class_name', 'Unknown') if foods_detected else 'Unknown'
+                st.success(f"**Detected Food:** {food_name} [YOLO: {yolo_class_name}]")
+            
+            # Check if detection is uncertain
+            is_uncertain = prediction.get("is_uncertain", False)
+            if is_uncertain:
+                st.warning("⚠️ **Low Confidence Detection** - The model is not very confident about this detection. Results may be inaccurate.")
             
             # Confidence metric with color coding
             confidence_pct = confidence * 100
-            if confidence_pct >= 50:
+            if confidence_pct >= 65:
                 st.metric("Primary Confidence", f"{confidence_pct:.1f}%", delta="High confidence")
-            elif confidence_pct >= 20:
+            elif confidence_pct >= 50:
                 st.metric("Primary Confidence", f"{confidence_pct:.1f}%", delta="Medium confidence", delta_color="off")
             else:
                 st.metric("Primary Confidence", f"{confidence_pct:.1f}%", delta="Low confidence", delta_color="inverse")
+                st.warning("⚠️ **Very Low Confidence** - This detection may be incorrect. The model was trained on a small dataset (377 images) and may misclassify some foods.")
             
             # Model status info
             if "yolo" in status:
