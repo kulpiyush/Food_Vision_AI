@@ -23,9 +23,10 @@ ollama>=0.1.0  # For local LLM (Llama, Mistral)
 pyyaml>=6.0
 python-dotenv>=1.0.0
 requests>=2.31.0
+huggingface_hub>=0.20.0  # For downloading HuggingFace datasets
 
-# Optional: For YOLO multi-food detection
-# ultralytics>=8.0.0  # Uncomment if using YOLOv8
+# YOLO multi-food detection
+ultralytics>=8.0.0  # For YOLOv8 multi-food detection
 
 # Optional: For model optimization
 # onnx>=1.14.0

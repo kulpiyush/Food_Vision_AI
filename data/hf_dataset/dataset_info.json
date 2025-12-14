@@ -1,0 +1,50 @@
+{
+  "name": "SOHL Multi-Dish Indian Food Detection Dataset",
+  "description": "YOLOv8 dataset for detecting multiple Indian food items on plates",
+  "version": "1.0.0",
+  "created": "2025-08-16T16:19:51.524231",
+  "statistics": {
+    "total_images": 377,
+    "total_labels": 377,
+    "image_formats": [
+      ".jpg"
+    ],
+    "missing_labels": []
+  },
+  "classes": {
+    "0": "bread_or_Roti_naan",
+    "1": "curry_dish",
+    "2": "rice_dish",
+    "3": "dry_vegetable",
+    "4": "snack_item",
+    "5": "sweet_item",
+    "6": "accompaniment",
+    "7": "Dal_or_sambar",
+    "8": "drink",
+    "9": "eggs",
+    "10": "fish_dish",
+    "11": "fruits",
+    "12": "pasta",
+    "13": "salad",
+    "14": "soup",
+    "15": "south_indian_breakfast"
+  },
+  "format": "YOLOv8",
+  "usage": "object_detection",
+  "domain": "food_detection",
+  "cuisine": "indian",
+  "features": [
+    "multi_dish_detection",
+    "complex_layouts",
+    "real_world_scenarios",
+    "high_quality_annotations",
+    "comprehensive_classes"
+  ],
+  "recommended_training": {
+    "epochs": 100,
+    "batch_size": 8,
+    "image_size": 640,
+    "augmentation": "moderate",
+    "transfer_learning": "recommended"
+  }
+}
