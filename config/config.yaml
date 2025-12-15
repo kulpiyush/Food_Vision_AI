@@ -23,9 +23,10 @@ genai:
 
 # Nutritional Database
 nutrition_db:
-  path: "data/nutrition_db.csv"
+  path: "data/Indian_Food_Nutrition_Processed.csv"  # Kaggle dataset (direct semantic matching)
   default_portion: 100  # grams
   cuisine_focus: "indian"  # Indian cuisine nutritional data
+  similarity_threshold: 0.5  # Minimum similarity score for matching
 
 # Portion Estimation (Optional)
 portion_estimation:

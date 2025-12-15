@@ -7,12 +7,13 @@ Optimized for Khana dataset (131K+ images, 80 classes)
 import torch
 import torch.nn as nn
 from torchvision import transforms, models
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Union, Tuple
 import os
 import warnings
 from pathlib import Path
 import numpy as np
 from PIL import Image
+import math
 
 # Indian food class names (matching nutrition database)
 # These will be updated based on Khana dataset classes
@@ -43,7 +44,10 @@ class VisionModel:
         num_classes=None,
         class_names=None,
         confidence_threshold=0.3,
-        device=None
+        device=None,
+        ood_entropy_threshold=2.0,
+        ood_confidence_gap_threshold=0.3,
+        ood_confidence_threshold=0.7
     ):
         """
         Initialize classification vision model
@@ -55,6 +59,9 @@ class VisionModel:
             class_names (list): List of class names (default: INDIAN_FOOD_CLASSES)
             confidence_threshold (float): Minimum confidence for predictions
             device (str): Device to use ('cuda' or 'cpu')
+            ood_entropy_threshold (float): Entropy threshold for OOD detection (default: 2.0)
+            ood_confidence_gap_threshold (float): Confidence gap threshold for OOD detection (default: 0.3)
+            ood_confidence_threshold (float): Confidence threshold for OOD detection (default: 0.7)
         """
         self.model_name = model_name
         self.model_path = model_path
@@ -65,6 +72,11 @@ class VisionModel:
         self.num_classes = num_classes
         self._is_loaded = False
         self.transform = CLASSIFICATION_TRANSFORM
+        
+        # OOD detection thresholds
+        self.ood_entropy_threshold = ood_entropy_threshold
+        self.ood_confidence_gap_threshold = ood_confidence_gap_threshold
+        self.ood_confidence_threshold = ood_confidence_threshold
         
     def _create_model(self, num_classes: int):
         """Create model architecture"""
@@ -118,6 +130,101 @@ class VisionModel:
             raise ValueError(f"Unknown model: {self.model_name}. Use efficientnet_b0, resnet50, or mobilenet_v2")
         
         return model
+    
+    def calculate_entropy(self, probabilities: torch.Tensor) -> float:
+        """
+        Calculate entropy of prediction distribution
+        Higher entropy = more uncertain (predictions spread across classes)
+        Lower entropy = more confident (one class dominates)
+        
+        Args:
+            probabilities: Tensor of class probabilities [1, num_classes]
+        
+        Returns:
+            float: Entropy value (higher = more uncertain)
+        """
+        # Remove zero probabilities to avoid log(0)
+        probs = probabilities[0].cpu().numpy()
+        probs = probs[probs > 1e-10]  # Filter out near-zero values
+        
+        # Calculate entropy: -sum(p * log(p))
+        entropy = -np.sum(probs * np.log(probs))
+        return float(entropy)
+    
+    def calculate_confidence_gap(self, probabilities: torch.Tensor) -> float:
+        """
+        Calculate the gap between top-1 and top-2 predictions
+        Large gap = confident (one class clearly dominates)
+        Small gap = uncertain (top predictions are close)
+        
+        Args:
+            probabilities: Tensor of class probabilities [1, num_classes]
+        
+        Returns:
+            float: Gap between top-1 and top-2 (0.0 to 1.0)
+        """
+        probs = probabilities[0].cpu().numpy()
+        sorted_probs = np.sort(probs)[::-1]  # Sort descending
+        
+        if len(sorted_probs) < 2:
+            return 1.0  # Only one class, maximum gap
+        
+        gap = float(sorted_probs[0] - sorted_probs[1])
+        return gap
+    
+    def is_out_of_distribution(
+        self, 
+        confidence: float, 
+        probabilities: torch.Tensor
+    ) -> Tuple[bool, str]:
+        """
+        Detect if input is likely out-of-distribution (not an Indian dish)
+        
+        Uses multiple signals:
+        1. Prediction entropy (high = uncertain)
+        2. Confidence gap (small = uncertain)
+        3. Overall confidence (low = uncertain)
+        4. Suspiciously high confidence with low entropy (might be wrong prediction)
+        
+        Args:
+            confidence: Top-1 prediction confidence
+            probabilities: Full probability distribution [1, num_classes]
+        
+        Returns:
+            tuple: (is_ood: bool, reason: str)
+        """
+        entropy = self.calculate_entropy(probabilities)
+        confidence_gap = self.calculate_confidence_gap(probabilities)
+        
+        reasons = []
+        is_ood = False
+        
+        # Check entropy (high entropy = uncertain)
+        if entropy > self.ood_entropy_threshold:
+            is_ood = True
+            reasons.append(f"high uncertainty (entropy: {entropy:.2f})")
+        
+        # Check confidence gap (small gap = uncertain)
+        if confidence_gap < self.ood_confidence_gap_threshold:
+            is_ood = True
+            reasons.append(f"close predictions (gap: {confidence_gap:.2f})")
+        
+        # Check overall confidence (low confidence = uncertain)
+        if confidence < self.ood_confidence_threshold:
+            is_ood = True
+            reasons.append(f"low confidence ({confidence:.1%})")
+        
+        # Additional check: Very high confidence (>0.95) but entropy suggests uncertainty
+        # This catches cases like eggs -> gulab jamun (high confidence but model is actually uncertain)
+        # For 80 classes, normal high confidence should have entropy < 0.5
+        # If entropy > 1.0 even with high confidence, it suggests uncertainty
+        if confidence > 0.95 and entropy > 1.0:
+            is_ood = True
+            reasons.append(f"suspiciously high confidence with uncertainty (entropy: {entropy:.2f})")
+        
+        reason_str = ", ".join(reasons) if reasons else "normal prediction"
+        
+        return is_ood, reason_str
     
     def load_pretrained_model(self):
         """Load model (pretrained or fine-tuned)"""
@@ -237,6 +344,9 @@ class VisionModel:
         # Check if confidence is too low
         is_uncertain = confidence < self.confidence_threshold
         
+        # Detect out-of-distribution (OOD) inputs
+        is_ood, ood_reason = self.is_out_of_distribution(confidence, probabilities)
+        
         # Determine status
         status = "fine_tuned" if (self.model_path and os.path.exists(self.model_path)) else "pretrained"
         
@@ -246,6 +356,10 @@ class VisionModel:
             "class_index": predicted_idx,
             "top_predictions": top_predictions,
             "is_uncertain": is_uncertain,
+            "is_out_of_distribution": is_ood,
+            "ood_reason": ood_reason,
+            "entropy": self.calculate_entropy(probabilities),
+            "confidence_gap": self.calculate_confidence_gap(probabilities),
             "status": status,
             "model_name": self.model_name,
             "num_classes": self.num_classes
@@ -269,7 +383,10 @@ def get_vision_model(
     model_path=None,
     num_classes=None,
     class_names=None,
-    confidence_threshold=0.3
+    confidence_threshold=0.3,
+    ood_entropy_threshold=2.0, # Lower = more sensitive
+    ood_confidence_gap_threshold=0.3, # Lower = more sensitive
+    ood_confidence_threshold=0.7 # Higher = more sensitive
 ) -> VisionModel:
     """
     Factory function to create and load a vision model
@@ -280,6 +397,9 @@ def get_vision_model(
         num_classes (int): Number of classes
         class_names (list): List of class names
         confidence_threshold (float): Minimum confidence threshold
+        ood_entropy_threshold (float): Entropy threshold for OOD detection (default: 2.0)
+        ood_confidence_gap_threshold (float): Confidence gap threshold for OOD detection (default: 0.3)
+        ood_confidence_threshold (float): Confidence threshold for OOD detection (default: 0.7)
     
     Returns:
         VisionModel: Loaded and ready-to-use vision model
@@ -289,7 +409,10 @@ def get_vision_model(
         model_path=model_path,
         num_classes=num_classes,
         class_names=class_names,
-        confidence_threshold=confidence_threshold
+        confidence_threshold=confidence_threshold,
+        ood_entropy_threshold=ood_entropy_threshold,
+        ood_confidence_gap_threshold=ood_confidence_gap_threshold,
+        ood_confidence_threshold=ood_confidence_threshold
     )
     model.load_pretrained_model()
     return model

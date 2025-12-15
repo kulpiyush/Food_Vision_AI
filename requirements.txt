@@ -24,6 +24,9 @@ pyyaml>=6.0
 python-dotenv>=1.0.0
 requests>=2.31.0
 huggingface_hub>=0.20.0  # For downloading HuggingFace datasets
+kaggle>=1.5.0  # For downloading Kaggle datasets
+scikit-learn>=1.3.0  # For cosine similarity matching
+sentence-transformers>=2.2.0  # For semantic similarity (word embeddings)
 
 # Classification models (EfficientNet, ResNet, MobileNet)
 # Already included in torchvision - no additional package needed

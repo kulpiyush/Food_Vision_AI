@@ -10,10 +10,36 @@ import os
 from pathlib import Path
 
 # Import utility functions
-from utils.image_processing import validate_image
 from utils.nutrition_calculator import get_nutrition
 from models.vision_model import get_vision_model, VisionModel
 from models.genai_model import get_genai_model, GenAIModel
+
+
+def validate_image(image):
+    """
+    Validate image format and size
+    
+    Args:
+        image: PIL Image
+    
+    Returns:
+        tuple: (is_valid, error_message)
+    """
+    if image is None:
+        return False, "Image is None"
+    
+    if not isinstance(image, Image.Image):
+        return False, "Image must be PIL Image"
+    
+    # Check image size (minimum requirements)
+    width, height = image.size
+    if width < 32 or height < 32:
+        return False, f"Image too small: {width}x{height} (minimum 32x32)"
+    
+    if width > 10000 or height > 10000:
+        return False, f"Image too large: {width}x{height} (maximum 10000x10000)"
+    
+    return True, "Valid image"
 
 # Page configuration
 st.set_page_config(
@@ -199,11 +225,12 @@ def main():
                             # Make prediction with classification model
                             prediction = st.session_state.vision_model.predict(image)
                             
-                            # Get nutrition data
+                            # Get nutrition data from Kaggle Indian Food Nutrition Dataset (direct semantic matching)
                             nutrition = get_nutrition(
                                 prediction["food_name"],
-                                db_path="data/nutrition_db.csv",
-                                portion_size=100
+                                kaggle_path="data/Indian_Food_Nutrition_Processed.csv",
+                                portion_size=100,
+                                similarity_threshold=0.5
                             )
                             
                             # Initialize GenAI model if not already loaded
@@ -264,13 +291,43 @@ def main():
             st.markdown("---")
             st.subheader("🔍 Detection Results")
             
+            # Check for out-of-distribution (OOD) detection FIRST - before showing any results
+            is_ood = prediction.get("is_out_of_distribution", False)
+            ood_reason = prediction.get("ood_reason", "")
+            
+            if is_ood:
+                # Don't show incorrect detection results for OOD inputs
+                st.error("⚠️ **Out-of-Distribution Detection**")
+                st.warning(
+                    "**This app is trained specifically on Indian dishes and works best with Indian cuisine images.**\n\n"
+                    "The uploaded image does not appear to be an Indian dish. Please upload an image of an Indian dish "
+                    "(e.g., Biryani, Dosa, Curry, Samosa, etc.) for accurate food recognition and nutrition analysis."
+                )
+                if ood_reason:
+                    st.caption(f"🔍 Detection reason: {ood_reason}")
+                
+                # Show that no food was detected
+                st.info("❌ **No Indian dish detected** - Unable to provide nutrition information for non-Indian foods.")
+                
+                # Skip showing incorrect detection results
+                st.markdown("---")
+                st.subheader("📊 Nutritional Information")
+                st.warning("⚠️ Nutrition data unavailable - Please upload an image of an Indian dish.")
+                
+                st.markdown("---")
+                st.subheader("📝 AI Description")
+                st.info("💡 Upload an image of an Indian dish to get AI-generated descriptions and nutritional information.")
+                
+                # Stop here - don't show incorrect results
+                return
+            
+            # If not OOD, show normal detection results
             # Food detection
             food_name = prediction.get("food_name", "Unknown")
             confidence = prediction.get("confidence", 0.0)
             status = prediction.get("status", "unknown")
             model_name = prediction.get("model_name", "efficientnet_b0")
             
-            # Display detection result
             st.success(f"**Detected Food:** {food_name}")
             
             # Check if detection is uncertain
