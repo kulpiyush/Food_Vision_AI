@@ -205,3 +205,23 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Large dataset files (too big for GitHub)
+# GitHub limit: 100MB per file, recommended repo size < 1GB
+data/training_data/
+data/khana_dataset/
+data/downloads/
+data/old_*_backup*/
+*.tar.gz
+*.zip
+
+# Keep small essential files (use ! to override ignore):
+!data/nutrition_db.csv  # Small CSV file, should be included
+
+# Model weights - trained model is included (16MB, acceptable)
+# Uncomment below if you want to exclude model weights too:
+# models/weights/*.pt
+# models/weights/training_history.json
+
+# Keep class names and config:
+!models/weights/class_names.txt

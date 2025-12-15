@@ -1,133 +1,196 @@
-# 🚀 Quick Start Guide - FoodVisionAI
+# Quick Start Guide - Get Your Project Running
 
-## ✅ What We've Set Up
+Follow these steps to get FoodVisionAI up and running with the Khana dataset.
 
-1. **Architecture Design** - Complete system design in `ARCHITECTURE.md`
-2. **Project Structure** - All necessary folders created
-3. **Dependencies** - `requirements.txt` with all needed packages
-4. **Configuration** - `config/config.yaml` for easy customization
-5. **Documentation** - README, implementation guide, and project plan
+## Step 1: Install Dependencies
 
-## 🎯 Your Next Steps (Right Now!)
-
-### Step 1: Review the Architecture (15 minutes)
 ```bash
-# Open and read:
-open ARCHITECTURE.md
-```
-**What to understand:**
-- How the system works end-to-end
-- What components you'll build
-- Technology choices (EfficientNet, Ollama, Streamlit)
-
-### Step 2: Install Dependencies (10 minutes)
-```bash
-# Make sure you're in the project directory
-cd /Users/piyushkulkarni/Documents/Automated_Nutritional_Analysis_App
-
-# Activate virtual environment
-source venv/bin/activate
-
-# Install all packages
+cd /export/home/4prasad/piyush/Food_Vision_AI
 pip install -r requirements.txt
 ```
 
-### Step 3: Test Your Setup (5 minutes)
+**Note**: If you encounter permission issues, use:
 ```bash
-# Test Streamlit
-streamlit hello
-
-# If that works, you're ready!
+pip install --user -r requirements.txt
+# OR
+python3 -m pip install --break-system-packages -r requirements.txt
 ```
 
-### Step 4: Start Building (Follow Implementation Guide)
+## Step 2: Get Khana Dataset
+
+You need the **Google Drive file ID** for the Khana dataset ZIP file.
+
+### How to get the file ID:
+1. Open the Google Drive link to the Khana dataset
+2. Look at the URL: `https://drive.google.com/file/d/FILE_ID_HERE/view`
+3. Copy the `FILE_ID_HERE` part (the long string after `/d/`)
+
+### Download the dataset:
 ```bash
-# Open the guide
-open IMPLEMENTATION_GUIDE.md
+./scripts/download_khana_dataset.sh <YOUR_FILE_ID>
 ```
 
-## 📋 Decision Points
-
-Before you start coding, decide:
-
-### 1. **Which Local Cuisine?**
-- Indian? Chinese? Malaysian? Other?
-- This affects your training dataset
-
-### 2. **Vision Model Choice**
-- **EfficientNet-B0** (Recommended: Fast, accurate, small)
-- **ResNet-50** (More accurate, slower)
-- **ViT** (Latest, but needs more data)
-
-### 3. **GenAI Provider**
-- **Ollama + Llama 3.2** (Free, local, recommended to start)
-- **OpenAI API** (Better quality, costs money)
-- **Both** (Use Ollama for development, API for demo)
-
-### 4. **Extended Features Priority**
-- Which ones do you want? (affects timeline)
-- Start with core, add extended later
-
-## 🏗️ Architecture Summary
-
-```
-User Uploads Image
-    ↓
-Vision Model (EfficientNet) → Detects Food
-    ↓
-Nutrition Database → Gets Nutritional Values
-    ↓
-Generative AI (Llama) → Generates Description
-    ↓
-UI (Streamlit) → Displays Everything
+**Example:**
+```bash
+./scripts/download_khana_dataset.sh 1ABC123xyz456DEF789
 ```
 
-## 📁 Key Files to Create Next
+Or with the full URL:
+```bash
+./scripts/download_khana_dataset.sh "https://drive.google.com/file/d/1ABC123xyz456DEF789/view"
+```
 
-1. **`app.py`** - Main Streamlit application
-2. **`models/vision_model.py`** - Vision model wrapper
-3. **`models/genai_model.py`** - Generative AI wrapper
-4. **`utils/nutrition_calculator.py`** - Nutrition lookup
-5. **`data/nutrition_db.csv`** - Your nutritional database
+**What happens:**
+- Downloads the ZIP file to `data/downloads/khana.zip`
+- Extracts it to `data/khana_dataset/`
+- Backs up any existing dataset
 
-## 🎓 Assignment Checklist
+## Step 3: Organize the Dataset
 
-- [x] Architecture designed
-- [ ] Basic UI created
-- [ ] Vision model integrated
-- [ ] Fine-tuning completed
-- [ ] Nutritional database integrated
-- [ ] GenAI integrated
-- [ ] Extended features (optional)
-- [ ] Documentation complete
-- [ ] Presentation prepared
+After downloading, organize the dataset into train/val/test structure:
 
-## 💡 Pro Tips
+```bash
+python3 scripts/setup_khana_dataset.py
+```
 
-1. **Start with a working prototype** - Get something basic running first
-2. **Use pretrained models** - Don't train from scratch
-3. **Test frequently** - Don't wait until the end
-4. **Document as you code** - Easier than doing it later
-5. **Have a backup plan** - If Ollama doesn't work, use API
+**What happens:**
+- Analyzes the Khana dataset structure
+- Organizes into `data/training_data/train/`, `val/`, `test/`
+- Creates `class_names.txt` with all dish classes
+- Shows dataset statistics
 
-## 🆘 Need Help?
+**Expected output:**
+```
+✅ Setup Complete!
+Dataset location: data/training_data
+Classes: 80
+Train images: ~104,000
+Val images: ~13,000
+Test images: ~13,000
+```
 
-1. Check `IMPLEMENTATION_GUIDE.md` for detailed steps
-2. Check `ARCHITECTURE.md` for system design
-3. Check `PROJECT_PLAN.md` for timeline
-4. Google: "PyTorch transfer learning tutorial"
-5. Google: "Streamlit image upload tutorial"
+## Step 4: Train the Model
 
-## 🎯 Today's Goal
+Train your classification model on the Khana dataset:
 
-**Get a basic Streamlit app running that can:**
-1. Upload an image
-2. Display the image
-3. Show a placeholder "Analysis" button
+```bash
+python scripts/train_classification_model.py \
+    --data data/training_data \
+    --model efficientnet_b0 \
+    --epochs 50 \
+    --batch-size 32 \
+    --lr 0.001
+```
 
-That's it! Once that works, you're ready to add the AI components.
+**Training options:**
+- `--model`: Choose `efficientnet_b0` (recommended), `resnet50`, or `mobilenet_v2`
+- `--epochs`: Number of training epochs (50 is a good start)
+- `--batch-size`: Batch size (adjust based on your GPU memory)
+- `--lr`: Learning rate (0.001 is default)
+
+**What happens:**
+- Trains the model on your dataset
+- Saves model to `models/weights/food_classifier.pt`
+- Saves class names to `models/weights/class_names.txt`
+- Creates training history JSON
+
+**Training time:**
+- CPU: ~2-4 hours for 50 epochs
+- GPU: ~30-60 minutes for 50 epochs
+
+## Step 5: Run the Application
+
+Once training is complete, start the Streamlit app:
+
+```bash
+streamlit run app.py
+```
+
+The app will:
+- Automatically load your trained model
+- Open in your browser (usually at `http://localhost:8501`)
+- Be ready to classify Indian food images!
+
+## Step 6: Test the App
+
+1. **Upload an image** of Indian food (Biryani, Dosa, etc.)
+2. **Click "Analyze Food"**
+3. **View results:**
+   - Detected dish name
+   - Confidence score
+   - Nutritional information
+   - AI description (if Ollama is set up)
+
+## Optional: Set Up GenAI (for AI Descriptions)
+
+If you want AI-powered descriptions and Q&A:
+
+1. **Install Ollama:**
+   ```bash
+   # Visit https://ollama.ai and follow installation instructions
+   ```
+
+2. **Download LLM model:**
+   ```bash
+   ollama pull llama3.2
+   ```
+
+3. **Restart the app** - GenAI features will be automatically enabled
+
+See `OLLAMA_SETUP.md` for detailed instructions.
+
+## Troubleshooting
+
+### Issue: "gdown not found"
+```bash
+pip install gdown
+# OR
+python3 -m pip install --break-system-packages gdown
+```
+
+### Issue: "Permission denied" on download script
+```bash
+chmod +x scripts/download_khana_dataset.sh
+```
+
+### Issue: Dataset structure not recognized
+- Check that the Khana dataset has class folders (one folder per dish type)
+- Or check if it's already split into train/val/test
+- Run `ls -la data/khana_dataset/` to inspect structure
+
+### Issue: Out of memory during training
+- Reduce batch size: `--batch-size 16` or `--batch-size 8`
+- Use a smaller model: `--model mobilenet_v2`
+
+### Issue: Model not loading in app
+- Check that `models/weights/food_classifier.pt` exists
+- Verify `models/weights/class_names.txt` exists
+- Check file permissions
+
+## Next Steps After Setup
+
+1. **Improve accuracy**: Train for more epochs or use a larger model
+2. **Add more dishes**: Expand the nutrition database
+3. **Customize UI**: Modify `app.py` for your needs
+4. **Deploy**: Deploy to Streamlit Cloud or your own server
+
+## Quick Reference
+
+```bash
+# Download dataset
+./scripts/download_khana_dataset.sh <FILE_ID>
+
+# Setup dataset
+python3 scripts/setup_khana_dataset.py
+
+# Train model
+python scripts/train_classification_model.py --data data/training_data --model efficientnet_b0 --epochs 50
+
+# Run app
+streamlit run app.py
+```
 
 ---
 
-**Ready to start? Open `IMPLEMENTATION_GUIDE.md` and begin with Phase 1! 🚀**
+**Ready to start? Begin with Step 1!** 🚀
 

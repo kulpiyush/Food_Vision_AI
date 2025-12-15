@@ -1,0 +1,22 @@
+# Quick Download Commands for Khana Dataset
+
+# Option 1: Use the automated script (Recommended)
+./scripts/download_khana_from_folder.sh
+
+# Option 2: Manual download using gdown
+# First install gdown if needed:
+pip install gdown
+
+# Download the entire folder:
+gdown --folder "https://drive.google.com/drive/folders/1PWyJdkizw5ABBd8BIAnr_FZq91YZ2Uo0" -O data/downloads
+
+# Then extract dataset.tar.gz:
+cd data/downloads
+tar -xzf dataset.tar.gz -C ../khana_dataset/
+cd ../..
+
+# Option 3: Download specific files (if you have file IDs)
+# Get file IDs from the folder, then:
+# gdown <FILE_ID_FOR_DATASET_TAR_GZ> -O data/downloads/dataset.tar.gz
+# gdown <FILE_ID_FOR_LABELS_TXT> -O data/downloads/labels.txt
+# gdown <FILE_ID_FOR_TAXONOMY_CSV> -O data/downloads/taxonomy.csv

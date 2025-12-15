@@ -1,326 +1,285 @@
 """
-Vision Model Wrapper
-Handles loading and inference with YOLO for multi-food detection
-Phase 2: YOLO-based multi-food detection implementation
+Vision Model Wrapper - Classification Model
+Handles loading and inference with EfficientNet/ResNet for Indian food classification
+Optimized for Khana dataset (131K+ images, 80 classes)
 """
 
 import torch
-from typing import Dict, List, Tuple, Optional, Union
+import torch.nn as nn
+from torchvision import transforms, models
+from typing import Dict, List, Optional, Union
 import os
 import warnings
 from pathlib import Path
 import numpy as np
 from PIL import Image
 
-try:
-    from ultralytics import YOLO
-    YOLO_AVAILABLE = True
-except ImportError:
-    YOLO_AVAILABLE = False
-    YOLO = None
-
 # Indian food class names (matching nutrition database)
+# These will be updated based on Khana dataset classes
 INDIAN_FOOD_CLASSES = [
     "Biryani", "Dosa", "Idli", "Samosa", "Curry",
     "Naan", "Roti", "Dal", "Paneer Tikka", "Butter Chicken",
     "Palak Paneer", "Chole", "Rajma", "Aloo Gobi", "Baingan Bharta"
 ]
 
-# Direct mapping from YOLO class names to food names
-# This maps YOLO class names (from dataset) to nutrition database food names
-YOLO_CLASS_TO_FOOD = {
-    "bread_or_Roti_naan": "Roti",  # Default to Roti, can be Naan too
-    "curry_dish": "Curry",  # Generic curry
-    "rice_dish": "Biryani",  # Default rice dish
-    "dry_vegetable": "Aloo Gobi",  # Default dry vegetable
-    "snack_item": "Samosa",  # Default snack
-    "sweet_item": "Unknown",  # Not in nutrition DB yet
-    "accompaniment": "Unknown",  # Not in nutrition DB yet
-    "Dal_or_sambar": "Dal",
-    "drink": "Unknown",  # Not in nutrition DB yet
-    "eggs": "Eggs",  # Eggs
-    "fish_dish": "Unknown",  # Not in nutrition DB yet
-    "fruits": "Unknown",  # Not in nutrition DB yet
-    "pasta": "Unknown",  # Not in nutrition DB yet
-    "salad": "Unknown",  # Not in nutrition DB yet
-    "soup": "Unknown",  # Not in nutrition DB yet
-    "south_indian_breakfast": "Idli",  # Default to Idli, can be Dosa too
-}
-
-# Note: We now use direct 1-to-1 mapping from YOLO class names to food names
+# Image preprocessing for classification models
+CLASSIFICATION_TRANSFORM = transforms.Compose([
+    transforms.Resize((224, 224)),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+])
 
 
 class VisionModel:
     """
-    Wrapper class for YOLO-based multi-food detection
-    Phase 2: YOLO implementation for detecting multiple foods per image
+    Wrapper class for classification-based food recognition
+    Uses EfficientNet or ResNet for single-dish classification
     """
     
     def __init__(
         self,
-        model_name="yolov8s",  # Changed default to yolov8s for better accuracy
+        model_name="efficientnet_b0",
         model_path=None,
-        dataset_yaml=None,
-        confidence_threshold=0.5,  # Increased from 0.25 to reduce false positives
-        class_names=None
+        num_classes=None,
+        class_names=None,
+        confidence_threshold=0.3,
+        device=None
     ):
         """
-        Initialize YOLO vision model
+        Initialize classification vision model
         
         Args:
-            model_name (str): YOLO model name (yolov8n, yolov8s, yolov8m, etc.)
-            model_path (str): Path to fine-tuned YOLO model weights (optional)
-            dataset_yaml (str): Path to dataset.yaml file (for class names)
-            confidence_threshold (float): Confidence threshold for detections
-            class_names (list): List of food class names (default: INDIAN_FOOD_CLASSES)
+            model_name (str): Model architecture (efficientnet_b0, resnet50, mobilenet_v2)
+            model_path (str): Path to fine-tuned model weights (optional)
+            num_classes (int): Number of classes (auto-detected from model if not provided)
+            class_names (list): List of class names (default: INDIAN_FOOD_CLASSES)
+            confidence_threshold (float): Minimum confidence for predictions
+            device (str): Device to use ('cuda' or 'cpu')
         """
-        if not YOLO_AVAILABLE:
-            raise ImportError(
-                "ultralytics not installed. Install with: pip install ultralytics"
-            )
-        
         self.model_name = model_name
         self.model_path = model_path
-        self.dataset_yaml = dataset_yaml or "data/hf_dataset/dataset.yaml"
         self.confidence_threshold = confidence_threshold
         self.class_names = class_names if class_names is not None else INDIAN_FOOD_CLASSES
+        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.model = None
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.num_classes = num_classes
         self._is_loaded = False
-        self.yolo_class_names = []  # Will be loaded from dataset or model
+        self.transform = CLASSIFICATION_TRANSFORM
         
+    def _create_model(self, num_classes: int):
+        """Create model architecture"""
+        if self.model_name.startswith("efficientnet"):
+            # EfficientNet-B0, B1, B2, etc.
+            variant = self.model_name.replace("efficientnet_", "").upper()
+            try:
+                weights = getattr(models, f"EfficientNet_{variant}_Weights").DEFAULT
+                model = models.efficientnet_b0(weights=weights)
+            except:
+                # Fallback to B0
+                weights = models.EfficientNet_B0_Weights.DEFAULT
+                model = models.efficientnet_b0(weights=weights)
+            
+            # Replace classifier head
+            num_features = model.classifier[1].in_features
+            model.classifier = nn.Sequential(
+                nn.Dropout(p=0.2, inplace=True),
+                nn.Linear(num_features, num_classes)
+            )
+            
+        elif self.model_name.startswith("resnet"):
+            # ResNet-50, ResNet-34, etc.
+            if "50" in self.model_name:
+                weights = models.ResNet50_Weights.DEFAULT
+                model = models.resnet50(weights=weights)
+                num_features = model.fc.in_features
+                model.fc = nn.Linear(num_features, num_classes)
+            elif "34" in self.model_name:
+                weights = models.ResNet34_Weights.DEFAULT
+                model = models.resnet34(weights=weights)
+                num_features = model.fc.in_features
+                model.fc = nn.Linear(num_features, num_classes)
+            else:
+                # Default to ResNet-50
+                weights = models.ResNet50_Weights.DEFAULT
+                model = models.resnet50(weights=weights)
+                num_features = model.fc.in_features
+                model.fc = nn.Linear(num_features, num_classes)
+                
+        elif self.model_name.startswith("mobilenet"):
+            # MobileNet-V2
+            weights = models.MobileNet_V2_Weights.DEFAULT
+            model = models.mobilenet_v2(weights=weights)
+            num_features = model.classifier[1].in_features
+            model.classifier = nn.Sequential(
+                nn.Dropout(0.2),
+                nn.Linear(num_features, num_classes)
+            )
+        else:
+            raise ValueError(f"Unknown model: {self.model_name}. Use efficientnet_b0, resnet50, or mobilenet_v2")
+        
+        return model
+    
     def load_pretrained_model(self):
-        """
-        Load YOLO model (pretrained or fine-tuned)
-        """
+        """Load model (pretrained or fine-tuned)"""
         if self._is_loaded and self.model is not None:
             return  # Already loaded
         
         try:
             # Load fine-tuned model if available
             if self.model_path and os.path.exists(self.model_path):
-                print(f"📥 Loading fine-tuned YOLO model from {self.model_path}")
-                self.model = YOLO(self.model_path)
-                print(f"✅ Loaded fine-tuned model")
+                print(f"📥 Loading fine-tuned model from {self.model_path}")
+                checkpoint = torch.load(self.model_path, map_location=self.device)
+                
+                # Handle different checkpoint formats
+                if isinstance(checkpoint, dict):
+                    if 'model_state_dict' in checkpoint:
+                        state_dict = checkpoint['model_state_dict']
+                        self.num_classes = checkpoint.get('num_classes', len(self.class_names))
+                        if 'class_names' in checkpoint:
+                            self.class_names = checkpoint['class_names']
+                            print(f"✅ Loaded {len(self.class_names)} classes from checkpoint")
+                    elif 'state_dict' in checkpoint:
+                        state_dict = checkpoint['state_dict']
+                        self.num_classes = checkpoint.get('num_classes', len(self.class_names))
+                    else:
+                        state_dict = checkpoint
+                        # Try to infer num_classes from state_dict
+                        if self.num_classes is None:
+                            # Get last layer size
+                            for key in reversed(list(state_dict.keys())):
+                                if 'classifier' in key or 'fc' in key:
+                                    self.num_classes = state_dict[key].shape[0]
+                                    break
+                else:
+                    state_dict = checkpoint
+                
+                if self.num_classes is None:
+                    self.num_classes = len(self.class_names)
+                
+                # If class_names not loaded from checkpoint, try to load from class_names.txt
+                if not self.class_names or len(self.class_names) != self.num_classes:
+                    class_names_file = Path(self.model_path).parent / "class_names.txt"
+                    if class_names_file.exists():
+                        with open(class_names_file, 'r') as f:
+                            self.class_names = [line.strip() for line in f if line.strip()]
+                        print(f"✅ Loaded {len(self.class_names)} classes from {class_names_file}")
+                
+                self.model = self._create_model(self.num_classes)
+                self.model.load_state_dict(state_dict, strict=False)
+                self.model.to(self.device)
+                self.model.eval()
+                
             else:
-                # Load pretrained YOLO model
-                print(f"📥 Loading pretrained {self.model_name} model...")
-                self.model = YOLO(f"{self.model_name}.pt")
-                print(f"✅ Loaded pretrained {self.model_name}")
-            
-            # Get class names from model or dataset
-            if hasattr(self.model, 'names'):
-                self.yolo_class_names = list(self.model.names.values())
-            elif os.path.exists(self.dataset_yaml):
-                import yaml
-                with open(self.dataset_yaml, 'r') as f:
-                    config = yaml.safe_load(f)
-                    self.yolo_class_names = list(config.get('names', {}).values())
+                # Load pretrained model (ImageNet weights)
+                print(f"📥 Loading pretrained {self.model_name} (ImageNet weights)")
+                self.num_classes = len(self.class_names)
+                self.model = self._create_model(self.num_classes)
+                self.model.to(self.device)
+                self.model.eval()
             
             self._is_loaded = True
             print(f"✅ Model loaded successfully on {self.device}")
-            print(f"   YOLO classes: {len(self.yolo_class_names)}")
+            print(f"   Classes: {self.num_classes}")
             
         except Exception as e:
-            raise RuntimeError(f"Failed to load YOLO model: {str(e)}")
-    
-    def _map_yolo_to_food(self, yolo_class_id: int, confidence: float) -> Dict:
-        """
-        Map YOLO class detection to food name
-        
-        Args:
-            yolo_class_id: YOLO class ID
-            confidence: Detection confidence
-        
-        Returns:
-            Dict with food detection info
-        """
-        # Get YOLO class name
-        if yolo_class_id < len(self.yolo_class_names):
-            yolo_class_name = self.yolo_class_names[yolo_class_id]
-        else:
-            yolo_class_name = f"Class_{yolo_class_id}"
-        
-        # Map to food name
-        food_name = YOLO_CLASS_TO_FOOD.get(yolo_class_name, yolo_class_name)
-        
-        return {
-            "food_name": food_name,
-            "yolo_class_name": yolo_class_name,  # Keep original for debugging
-            "confidence": confidence,
-            "yolo_class": yolo_class_id,
-            "mapped": food_name != yolo_class_name
-        }
+            raise RuntimeError(f"Failed to load model: {str(e)}")
     
     def predict(self, image: Union[Image.Image, np.ndarray, str, Path]) -> Dict:
         """
-        Predict food items from image (multi-food detection)
+        Predict food class from image
         
         Args:
             image: PIL Image, numpy array, or path to image file
         
         Returns:
-            dict: Prediction results with multiple foods detected
+            dict: Prediction results with food name and confidence
         """
         if self.model is None or not self._is_loaded:
             raise ValueError("Model not loaded. Call load_pretrained_model() first.")
         
-        # Convert PIL Image to numpy array if needed
-        if isinstance(image, Image.Image):
-            image = np.array(image)
+        # Load image if path provided
+        if isinstance(image, (str, Path)):
+            image = Image.open(image).convert('RGB')
+        elif isinstance(image, np.ndarray):
+            image = Image.fromarray(image).convert('RGB')
+        elif not isinstance(image, Image.Image):
+            raise ValueError(f"Unsupported image type: {type(image)}")
         
-        # Run YOLO inference
-        results = self.model.predict(
-            image,
-            conf=self.confidence_threshold,
-            device=self.device,
-            verbose=False
-        )
+        # Preprocess image
+        input_tensor = self.transform(image).unsqueeze(0).to(self.device)
         
-        # Process results
-        all_detections = []
+        # Run inference
+        with torch.no_grad():
+            outputs = self.model(input_tensor)
+            probabilities = torch.nn.functional.softmax(outputs, dim=1)
+            confidence, predicted_idx = torch.max(probabilities, 1)
+            confidence = confidence.item()
+            predicted_idx = predicted_idx.item()
         
-        if results and len(results) > 0:
-            result = results[0]  # First (and usually only) result
-            
-            if result.boxes is not None and len(result.boxes) > 0:
-                boxes = result.boxes
-                
-                # Get all detections
-                for i in range(len(boxes)):
-                    # Get class ID and confidence
-                    class_id = int(boxes.cls[i].item())
-                    confidence = float(boxes.conf[i].item())
-                    
-                    # Get bounding box
-                    bbox = boxes.xyxy[i].cpu().numpy()  # [x1, y1, x2, y2]
-                    
-                    # Map YOLO class to food name
-                    food_detection = self._map_yolo_to_food(class_id, confidence)
-                    food_detection["bbox"] = bbox.tolist()
-                    all_detections.append(food_detection)
+        # Get top predictions
+        top_k = min(5, self.num_classes)
+        top_probs, top_indices = torch.topk(probabilities, top_k)
+        top_predictions = []
         
-        # If no detections, return empty result
-        if not all_detections:
-            return {
-                "foods": [],
-                "food_name": "Unknown",
-                "confidence": 0.0,
-                "top_predictions": [],
-                "status": "yolo_pretrained" if not self.model_path else "yolo_fine_tuned",
-                "model_name": self.model_name,
-                "num_detections": 0
-            }
+        for prob, idx in zip(top_probs[0], top_indices[0]):
+            if idx < len(self.class_names):
+                top_predictions.append({
+                    "food_name": self.class_names[idx],
+                    "confidence": prob.item()
+                })
         
-        # Sort by confidence
-        all_detections.sort(key=lambda x: x["confidence"], reverse=True)
+        # Get predicted food name
+        if predicted_idx < len(self.class_names):
+            food_name = self.class_names[predicted_idx]
+        else:
+            food_name = "Unknown"
         
-        # Aggressive false positive filtering
-        class_counts = {}
-        for det in all_detections:
-            yolo_class = det.get("yolo_class_name", "")
-            class_counts[yolo_class] = class_counts.get(yolo_class, 0) + 1
-        
-        # If a class appears more than 3 times, it's VERY likely a false positive
-        # Reject all detections of that class if count > 3
-        filtered_detections = []
-        for det in all_detections:
-            yolo_class = det.get("yolo_class_name", "")
-            count = class_counts.get(yolo_class, 0)
-            confidence = det.get("confidence", 0.0)
-            
-            # Reject if:
-            # 1. Too many detections of same class (>3) - clear false positive
-            # 2. Low confidence (<0.6) AND many duplicates (>2)
-            if count > 3:
-                # Too many duplicates - reject this class entirely
-                continue
-            elif count > 2 and confidence < 0.6:
-                # Multiple detections with low confidence - likely wrong
-                continue
-            else:
-                # Keep this detection
-                filtered_detections.append(det)
-        
-        # Use filtered detections
-        all_detections = filtered_detections
-        
-        # If no detections after filtering, return empty
-        if not all_detections:
-            return {
-                "foods": [],
-                "food_name": "Unknown",
-                "confidence": 0.0,
-                "top_predictions": [],
-                "status": "yolo_pretrained" if not self.model_path else "yolo_fine_tuned",
-                "model_name": self.model_name,
-                "num_detections": 0
-            }
-        
-        # Additional validation: if top detection has low confidence, mark as uncertain
-        primary = all_detections[0]
-        primary_confidence = primary.get("confidence", 0.0)
-        
-        # If confidence is too low, mark as uncertain
-        is_uncertain = primary_confidence < 0.65
-        
-        # Get top predictions (unique foods, highest confidence for each)
-        food_confidences = {}
-        for det in all_detections:
-            food_name = det["food_name"]
-            if food_name not in food_confidences or det["confidence"] > food_confidences[food_name]["confidence"]:
-                food_confidences[food_name] = det
-        
-        top_predictions = sorted(
-            food_confidences.values(),
-            key=lambda x: x["confidence"],
-            reverse=True
-        )[:5]
+        # Check if confidence is too low
+        is_uncertain = confidence < self.confidence_threshold
         
         # Determine status
-        status = "yolo_fine_tuned" if (self.model_path and os.path.exists(self.model_path)) else "yolo_pretrained"
+        status = "fine_tuned" if (self.model_path and os.path.exists(self.model_path)) else "pretrained"
         
         return {
-            "food_name": primary["food_name"],
-            "confidence": primary["confidence"],
-            "yolo_class_name": primary.get("yolo_class_name", "Unknown"),  # Add for debugging
-            "is_uncertain": is_uncertain,  # Flag for low confidence
-            "top_predictions": [
-                {"food_name": pred["food_name"], "confidence": pred["confidence"]}
-                for pred in top_predictions
-            ],
-            "foods": all_detections,  # All detected foods (multi-food support)
+            "food_name": food_name,
+            "confidence": confidence,
+            "class_index": predicted_idx,
+            "top_predictions": top_predictions,
+            "is_uncertain": is_uncertain,
             "status": status,
             "model_name": self.model_name,
-            "num_detections": len(all_detections)
+            "num_classes": self.num_classes
         }
     
     def get_model_info(self) -> Dict:
         """Get information about the loaded model"""
         return {
             "model_name": self.model_name,
-            "model_path": self.model_path,
+            "model_path": self.model_path if self.model_path else "Pretrained (ImageNet)",
             "device": self.device,
-            "is_loaded": self._is_loaded,
+            "num_classes": self.num_classes,
             "is_fine_tuned": self.model_path is not None and os.path.exists(self.model_path) if self.model_path else False,
-            "confidence_threshold": self.confidence_threshold,
-            "yolo_classes": len(self.yolo_class_names),
-            "food_classes": len(self.class_names)
+            "is_loaded": self._is_loaded,
+            "class_names": self.class_names[:10] if len(self.class_names) > 10 else self.class_names  # Show first 10
         }
 
 
 def get_vision_model(
-    model_name="yolov8s",  # Changed default to yolov8s for better accuracy
+    model_name="efficientnet_b0",
     model_path=None,
-    dataset_yaml=None
+    num_classes=None,
+    class_names=None,
+    confidence_threshold=0.3
 ) -> VisionModel:
     """
-    Factory function to create and load a YOLO vision model
+    Factory function to create and load a vision model
     
     Args:
-        model_name (str): YOLO model name
-        model_path (str): Path to fine-tuned weights (optional)
-        dataset_yaml (str): Path to dataset.yaml (optional)
+        model_name (str): Model architecture name
+        model_path (str): Path to fine-tuned model
+        num_classes (int): Number of classes
+        class_names (list): List of class names
+        confidence_threshold (float): Minimum confidence threshold
     
     Returns:
         VisionModel: Loaded and ready-to-use vision model
@@ -328,27 +287,9 @@ def get_vision_model(
     model = VisionModel(
         model_name=model_name,
         model_path=model_path,
-        dataset_yaml=dataset_yaml
+        num_classes=num_classes,
+        class_names=class_names,
+        confidence_threshold=confidence_threshold
     )
     model.load_pretrained_model()
     return model
-
-
-# Keep old functions for backward compatibility (if needed)
-def create_placeholder_prediction():
-    """DEPRECATED: Use VisionModel.predict() instead"""
-    import random
-    food = random.choice(INDIAN_FOOD_CLASSES)
-    
-    return {
-        "food_name": food,
-        "confidence": 0.85 + random.random() * 0.1,
-        "top_predictions": [
-            {"food_name": food, "confidence": 0.85 + random.random() * 0.1},
-            {"food_name": random.choice(INDIAN_FOOD_CLASSES), "confidence": 0.5 + random.random() * 0.2},
-            {"food_name": random.choice(INDIAN_FOOD_CLASSES), "confidence": 0.3 + random.random() * 0.2},
-        ],
-        "status": "placeholder",
-        "foods": [{"food_name": food, "confidence": 0.85 + random.random() * 0.1}],
-        "num_detections": 1
-    }

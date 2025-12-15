@@ -75,12 +75,12 @@ def main():
         st.header("⚙️ Settings")
         st.markdown("---")
         
-        # Model selection (for future use)
+        # Model selection
         st.subheader("Model Settings")
         model_choice = st.selectbox(
             "Vision Model",
-            ["YOLOv8n (Multi-food Detection)", "YOLOv8s", "YOLOv8m", "EfficientNet-B0 (Legacy)"],
-            help="YOLO models detect multiple foods per image"
+            ["EfficientNet-B0 (Recommended)", "ResNet-50", "MobileNet-V2"],
+            help="Classification models for single-dish recognition"
         )
         
         st.markdown("---")
@@ -102,7 +102,7 @@ def main():
             model_info = st.session_state.vision_model.get_model_info()
             model_type = "Fine-tuned" if model_info.get('is_fine_tuned', False) else "Pretrained"
             st.success(f"✅ Vision Model: {model_type} {model_info['model_name']} loaded")
-            st.caption(f"Device: {model_info['device']} | YOLO Classes: {model_info['yolo_classes']} | Food Classes: {model_info['food_classes']}")
+            st.caption(f"Device: {model_info['device']} | Classes: {model_info['num_classes']}")
         else:
             st.info("ℹ️ Vision model will load on first analysis")
         
@@ -161,27 +161,42 @@ def main():
                         try:
                             # Load model if not already loaded (cache in session state)
                             if st.session_state.vision_model is None:
-                                with st.spinner("Loading YOLO model (first time only)..."):
+                                with st.spinner("Loading classification model (first time only)..."):
+                                    # Determine model name from selection
+                                    model_name_map = {
+                                        "EfficientNet-B0 (Recommended)": "efficientnet_b0",
+                                        "ResNet-50": "resnet50",
+                                        "MobileNet-V2": "mobilenet_v2"
+                                    }
+                                    selected_model = model_name_map.get(model_choice, "efficientnet_b0")
+                                    
                                     # Try to use fine-tuned model if available, otherwise use pretrained
-                                    model_path = "models/weights/food_detector_yolo.pt"
-                                    # Use the training dataset YAML which has the correct class names
-                                    dataset_yaml = "data/yolo_training_data/dataset.yaml"
+                                    model_path = "models/weights/food_classifier.pt"
+                                    
+                                    # Load class names from saved model weights directory
+                                    class_names_file = "models/weights/class_names.txt"
+                                    class_names = None
+                                    if os.path.exists(class_names_file):
+                                        with open(class_names_file, 'r') as f:
+                                            class_names = [line.strip() for line in f if line.strip()]
+                                        st.info(f"✅ Loaded {len(class_names)} dish classes from trained model")
                                     
                                     if os.path.exists(model_path):
                                         st.session_state.vision_model = get_vision_model(
-                                            model_name="yolov8s",  # Updated to yolov8s for better accuracy
+                                            model_name=selected_model,
                                             model_path=model_path,
-                                            dataset_yaml=dataset_yaml
+                                            class_names=class_names
                                         )
+                                        st.success("✅ Loaded fine-tuned model (93.25% accuracy)")
                                     else:
-                                        # Use pretrained YOLO (will need fine-tuning for food detection)
+                                        # Use pretrained model (will need fine-tuning for food detection)
                                         st.session_state.vision_model = get_vision_model(
-                                            model_name="yolov8s",  # Updated to yolov8s
-                                            dataset_yaml=dataset_yaml
+                                            model_name=selected_model,
+                                            class_names=class_names
                                         )
+                                        st.warning("⚠️ Using pretrained model. Train a model first for better accuracy.")
                             
-                            # YOLO accepts PIL Image directly (no preprocessing needed)
-                            # Make prediction with YOLO model
+                            # Make prediction with classification model
                             prediction = st.session_state.vision_model.predict(image)
                             
                             # Get nutrition data
@@ -245,32 +260,18 @@ def main():
             prediction = results.get("prediction", {})
             nutrition = results.get("nutrition")
             
-            # Display results (works for both classification and YOLO multi-food detection)
+            # Display results
             st.markdown("---")
             st.subheader("🔍 Detection Results")
-            
-            # Check if YOLO detected multiple foods
-            num_detections = prediction.get("num_detections", 1)
-            foods_detected = prediction.get("foods", [])
             
             # Food detection
             food_name = prediction.get("food_name", "Unknown")
             confidence = prediction.get("confidence", 0.0)
             status = prediction.get("status", "unknown")
-            model_name = prediction.get("model_name", "yolov8n")
+            model_name = prediction.get("model_name", "efficientnet_b0")
             
             # Display detection result
-            if num_detections > 1:
-                st.success(f"**Detected {num_detections} Foods:**")
-                # Show all detected foods
-                for i, food_det in enumerate(foods_detected[:5], 1):  # Show up to 5
-                    conf_pct = food_det['confidence'] * 100
-                    yolo_class = food_det.get('yolo_class_name', 'Unknown')
-                    st.caption(f"{i}. **{food_det['food_name']}** ({conf_pct:.1f}% confidence) [YOLO: {yolo_class}]")
-            else:
-                # Show YOLO class for debugging
-                yolo_class_name = foods_detected[0].get('yolo_class_name', 'Unknown') if foods_detected else 'Unknown'
-                st.success(f"**Detected Food:** {food_name} [YOLO: {yolo_class_name}]")
+            st.success(f"**Detected Food:** {food_name}")
             
             # Check if detection is uncertain
             is_uncertain = prediction.get("is_uncertain", False)
@@ -285,18 +286,14 @@ def main():
                 st.metric("Primary Confidence", f"{confidence_pct:.1f}%", delta="Medium confidence", delta_color="off")
             else:
                 st.metric("Primary Confidence", f"{confidence_pct:.1f}%", delta="Low confidence", delta_color="inverse")
-                st.warning("⚠️ **Very Low Confidence** - This detection may be incorrect. The model was trained on a small dataset (377 images) and may misclassify some foods.")
+                st.warning("⚠️ **Very Low Confidence** - This detection may be incorrect.")
             
             # Model status info
-            if "yolo" in status:
-                if "fine_tuned" in status:
-                    st.success("✅ Using fine-tuned YOLO model optimized for Indian cuisine")
-                else:
-                    st.info("ℹ️ Using pretrained YOLO model. Fine-tune on Indian cuisine dataset for better accuracy.")
-            elif status == "pretrained":
-                st.info("ℹ️ Using pretrained ImageNet model. For better accuracy, fine-tune on Indian cuisine dataset.")
+            if status == "pretrained":
+                st.info("ℹ️ Using pretrained ImageNet model. Fine-tune on Khana dataset for better accuracy.")
             elif status == "fine_tuned":
                 st.success("✅ Using fine-tuned model optimized for Indian cuisine")
+                st.caption(f"🎯 Validation Accuracy: 93.25% | Trained on 105K+ images | 80 dish classes")
             
             # Top predictions
             if "top_predictions" in prediction and len(prediction["top_predictions"]) > 0:
@@ -402,7 +399,7 @@ def main():
             # Phase 2 info
             st.markdown("---")
             genai_status = "✅ Active" if (st.session_state.genai_model and st.session_state.genai_model.is_available()) else "⚠️ Not available"
-            st.caption(f"ℹ️ **Phase 2 Status:** Real {model_name} model + GenAI ({genai_status})")
+            st.caption(f"ℹ️ **Status:** Classification model ({model_name}) + GenAI ({genai_status})")
         else:
             st.info("👈 Upload an image and click 'Analyze Food' to see results here")
             

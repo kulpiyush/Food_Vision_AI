@@ -1,149 +1,250 @@
-# FoodVisionAI - Automated Nutritional Analysis App
+# FoodVisionAI - Indian Food Recognition & Nutrition Analysis
 
-An AI-powered application that analyzes food images to provide nutritional information, meal descriptions, and dietary recommendations using deep learning and generative AI.
+An AI-powered application that identifies Indian dishes from images and provides detailed nutritional information using deep learning classification models.
 
-## 🎯 Project Overview
+## Features
 
-FoodVisionAI uses:
-- **Vision Models** (EfficientNet/ResNet) for food detection and classification
-- **Generative AI** (Llama/Mistral/GPT) for food descriptions and recommendations
-- **Nutritional Database** for accurate nutritional information
-- **Streamlit UI** for easy interaction
+- 🍽️ **Food Recognition**: Accurately classifies Indian dishes from images using state-of-the-art deep learning models
+- 📊 **Nutrition Analysis**: Provides comprehensive nutritional information for detected dishes
+- 🤖 **AI Descriptions**: Generates intelligent descriptions of dishes using local LLM (Ollama)
+- 💬 **Interactive Q&A**: Ask questions about dishes, nutrition, and health benefits
 
-## ✨ Features
+## How It Works
 
-### Core Features
-- ✅ Food image classification using fine-tuned vision models
-- ✅ Automatic nutritional information retrieval
-- ✅ AI-generated food descriptions and analysis
-- ✅ Meal suggestions and healthy alternatives
-- ✅ Interactive Q&A about meals
+1. **Upload** an image of Indian food
+2. **Classify** the dish using a fine-tuned EfficientNet/ResNet model
+3. **Retrieve** nutritional information from the database
+4. **Generate** AI-powered descriptions and answer questions
 
-### Extended Features (Optional)
-- 🔄 Multi-food detection in single image
-- 🔄 Portion size estimation
-- 🔄 Correction interface for inaccurate detections
-- 🔄 Personalized dietary recommendations
-- 🔄 Model optimization and quantization
+## Architecture
 
-## 🚀 Quick Start
+### Classification Model
+- **Base Models**: EfficientNet-B0, ResNet-50, or MobileNet-V2
+- **Training Dataset**: Khana dataset (131,000+ images, 80 Indian dish classes)
+- **Task**: Image classification (single dish per image)
+- **Output**: Dish name with confidence score
+
+### Technology Stack
+- **Frontend**: Streamlit
+- **Deep Learning**: PyTorch + torchvision
+- **Model Architecture**: EfficientNet/ResNet (transfer learning from ImageNet)
+- **GenAI**: Ollama (local LLM for descriptions)
+- **Data Processing**: Pandas, PIL
+
+## Installation
 
 ### Prerequisites
-- Python 3.8+
-- pip or conda
-- GPU recommended (optional, CPU works too)
+- Python 3.8 or higher
+- CUDA-capable GPU (optional, for faster training)
 
-### Installation
+### Setup
 
-1. **Clone or navigate to the project directory:**
+1. **Clone the repository**
    ```bash
-   cd Automated_Nutritional_Analysis_App
+   git clone <repository-url>
+   cd Food_Vision_AI
    ```
 
-2. **Activate virtual environment:**
-   ```bash
-   source venv/bin/activate  # macOS/Linux
-   # or
-   venv\Scripts\activate  # Windows
-   ```
-
-3. **Install dependencies:**
+2. **Install dependencies**
    ```bash
    pip install -r requirements.txt
    ```
 
-4. **Set up Ollama (for local GenAI):**
+3. **Download Khana Dataset**
+   
+   Get the Google Drive file ID for the Khana dataset, then:
    ```bash
-   # Visit https://ollama.ai and install Ollama
-   # Then pull a model:
-   ollama pull llama3.2
+   ./scripts/download_khana_dataset.sh <GOOGLE_DRIVE_FILE_ID>
    ```
 
-5. **Prepare nutritional database:**
-   - Download or create `data/nutrition_db.csv`
-   - Format: `food_name,calories,fat_g,carbs_g,protein_g,fiber_g,per_100g`
+4. **Organize Dataset**
+   ```bash
+   python3 scripts/setup_khana_dataset.py
+   ```
 
-6. **Run the application:**
+   This will organize the dataset into the required structure:
+   ```
+   data/training_data/
+   ├── train/
+   │   ├── Biryani/
+   │   ├── Dosa/
+   │   ├── Idli/
+   │   └── ... (80 classes)
+   ├── val/
+   │   └── ... (same classes)
+   └── test/
+       └── ... (same classes)
+   ```
+
+5. **Train the Model**
+   ```bash
+   python scripts/train_classification_model.py \
+       --data data/training_data \
+       --model efficientnet_b0 \
+       --epochs 50 \
+       --batch-size 32 \
+       --lr 0.001
+   ```
+
+   The trained model will be saved to `models/weights/food_classifier.pt`
+
+6. **Run the Application**
    ```bash
    streamlit run app.py
    ```
 
-## 📁 Project Structure
+## Model Training
+
+### Training Options
+
+**Model Architectures:**
+- `efficientnet_b0` - Recommended (best balance of speed and accuracy)
+- `resnet50` - Higher accuracy, slower inference
+- `mobilenet_v2` - Fastest, optimized for mobile devices
+
+**Training Parameters:**
+```bash
+python scripts/train_classification_model.py \
+    --data data/training_data \          # Dataset path
+    --model efficientnet_b0 \            # Model architecture
+    --epochs 50 \                        # Training epochs
+    --batch-size 32 \                    # Batch size
+    --lr 0.001 \                         # Learning rate
+    --output models/weights              # Output directory
+```
+
+### Training Output
+
+After training, you'll get:
+- `food_classifier.pt` - Trained model weights
+- `class_names.txt` - List of all dish classes
+- `training_history.json` - Training metrics and history
+
+## Dataset
+
+### Khana Dataset
+
+The project uses the **Khana dataset**, a comprehensive collection of Indian food images:
+- **Total Images**: 131,000+
+- **Dish Classes**: 80 categories
+- **Format**: Classification (images organized by dish type)
+- **Split**: Train (80%), Validation (10%), Test (10%)
+
+### Dataset Structure
+
+The dataset is organized in ImageFolder format:
+```
+data/training_data/
+├── train/
+│   ├── Biryani/
+│   │   ├── image1.jpg
+│   │   ├── image2.jpg
+│   │   └── ...
+│   ├── Dosa/
+│   ├── Idli/
+│   └── ... (80 classes)
+├── val/
+│   └── ... (same structure)
+└── test/
+    └── ... (same structure)
+```
+
+## Usage
+
+### Running the App
+
+1. Start the Streamlit application:
+   ```bash
+   streamlit run app.py
+   ```
+
+2. Upload an image of Indian food through the web interface
+
+3. Click "Analyze Food" to get:
+   - Detected dish name
+   - Confidence score
+   - Nutritional information (calories, protein, carbs, fat)
+   - AI-generated description (if Ollama is configured)
+   - Q&A interface for additional questions
+
+### Model Selection
+
+You can choose different models in the app sidebar:
+- **EfficientNet-B0** (Recommended) - Best balance
+- **ResNet-50** - Higher accuracy
+- **MobileNet-V2** - Fastest inference
+
+## Project Structure
 
 ```
-Automated_Nutritional_Analysis_App/
-├── app.py                    # Main Streamlit application
+Food_Vision_AI/
+├── app.py                              # Main Streamlit application
 ├── models/
-│   ├── vision_model.py      # Vision model wrapper
-│   ├── genai_model.py       # Generative AI wrapper
-│   └── weights/             # Saved model weights
+│   ├── vision_model.py                # Classification model wrapper
+│   └── weights/                        # Trained model weights
+│       ├── food_classifier.pt         # Trained model
+│       └── class_names.txt            # Class labels
 ├── data/
-│   ├── nutrition_db.csv    # Nutritional database
-│   └── training_data/       # Fine-tuning dataset
-├── utils/
-│   ├── image_processing.py
-│   ├── nutrition_calculator.py
-│   └── portion_estimator.py
-├── config/
-│   └── config.yaml          # Configuration file
-├── requirements.txt         # Python dependencies
-├── README.md               # This file
-├── ARCHITECTURE.md         # System architecture
-└── IMPLEMENTATION_GUIDE.md # Step-by-step guide
+│   ├── training_data/                  # Khana dataset
+│   │   ├── train/                     # Training images
+│   │   ├── val/                       # Validation images
+│   │   └── test/                      # Test images
+│   └── nutrition_db.csv               # Nutrition database
+├── scripts/
+│   ├── download_khana_dataset.sh       # Download dataset
+│   ├── setup_khana_dataset.py         # Organize dataset
+│   └── train_classification_model.py   # Training script
+└── utils/
+    ├── image_processing.py            # Image utilities
+    ├── nutrition_calculator.py        # Nutrition lookup
+    └── genai_model.py                 # GenAI integration
 ```
 
-## 📖 Documentation
+## GenAI Integration (Optional)
 
-- **[ARCHITECTURE.md](ARCHITECTURE.md)** - Detailed system architecture and design
-- **[IMPLEMENTATION_GUIDE.md](IMPLEMENTATION_GUIDE.md)** - Step-by-step implementation guide
+For AI-powered descriptions and Q&A features:
 
-## 🔧 Configuration
+1. **Install Ollama**
+   - Visit https://ollama.ai
+   - Follow installation instructions for your OS
 
-Edit `config/config.yaml` to customize:
-- Vision model selection
-- Generative AI provider and model
-- Nutritional database path
-- Feature toggles
+2. **Download LLM Model**
+   ```bash
+   ollama pull llama3.2
+   ```
 
-## 🎓 Assignment Details
+3. **Restart the App**
+   - The app will automatically detect Ollama
+   - GenAI features will be enabled
 
-**Module:** Data Analytics-3  
-**Instructor:** Prof. Dr. Gayan de Silva  
-**Deadline:** December 16th, 2025, 9am-1pm  
-**Total Points:** 100
+See `OLLAMA_SETUP.md` for detailed setup instructions.
 
-### Assessment Criteria
-1. UI and Features (App design, usability, stability)
-2. Extended Features (Creativity beyond requirements)
-3. Model Efficiency & Improvements (Cost reduction, speed enhancements)
-4. Presentation & PPT (Clarity, demonstration, explanation)
-5. Documentation & Code Quality (Structure, README, comments, reproducibility)
+## Requirements
 
-## 🛠️ Development Roadmap
+- Python 3.8+
+- PyTorch 2.0+
+- torchvision 0.15+
+- Streamlit 1.28+
+- Pillow 10.0+
+- pandas 2.0+
+- numpy 1.24+
 
-- [x] Architecture design
-- [ ] Basic UI setup
-- [ ] Vision model integration
-- [ ] Nutritional database integration
-- [ ] Generative AI integration
-- [ ] Extended features
-- [ ] Optimization and polish
-- [ ] Documentation
+See `requirements.txt` for the complete list of dependencies.
 
-## 📝 Notes
+## Performance
 
-- Use open-source datasets and pretrained models
-- Focus on intelligent system design and creative GenAI integration
-- Fine-tune on local cuisine for better accuracy
+- **Inference Speed**: ~50-100ms per image (CPU), ~10-20ms (GPU)
+- **Accuracy**: Varies by model (EfficientNet-B0 typically achieves 85-90%+ on validation set)
+- **Model Size**: ~20-50MB depending on architecture
 
-## 🤝 Contributing
+## Contributing
 
-This is an individual project assignment. For questions or issues, refer to the implementation guide.
+Contributions are welcome! Please feel free to submit a Pull Request.
 
-## 📄 License
+## License
 
-Educational project for academic purposes.
+See individual files for licensing information.
 
 ---
 
-**Status:** 🚧 In Development
+**Built with ❤️ for Indian cuisine recognition and nutrition analysis**
