@@ -10,7 +10,7 @@ An AI-powered application that identifies Indian dishes from images and provides
 - 💬 **Interactive Q&A**: Ask questions about dishes, nutrition, and health benefits
 - 🚀 **Fast Inference**: Optimized for real-time predictions (~14ms per food search)
 - 🎨 **Modern UI**: Beautiful Streamlit-based web interface
-
+`  
 ## 🏗️ Architecture
 
 ### System Overview & Data Flow
@@ -482,16 +482,6 @@ We're planning to add intelligent portion size estimation from images to provide
 - Integration with fitness apps
 - Voice commands for hands-free operation
 
-## 🤝 Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## 📄 License
-
-See individual files for licensing information.
-
 ---
-
-**Built with ❤️ for Indian cuisine recognition and nutrition analysis**
 
 **Technologies**: PyTorch | Streamlit | Sentence Transformers | Ollama
